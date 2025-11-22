@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>留言板</title>
+<style>
+body { font-family: Arial; max-width: 600px; margin: 40px auto; }
+input, textarea { width: 100%; margin-bottom: 10px; padding: 8px; }
+button { padding: 8px 16px; }
+.comment { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; border-radius: 6px; }
+.comment small { color: gray; }
+</style>
+</head>
+<body>
+
+<h2>留言板</h2>
+
+<input type="text" id="name" placeholder="你的名字">
+<textarea id="message" placeholder="留言內容"></textarea>
+<button onclick="sendComment()">送出留言</button>
+
+<div id="comments"></div>
+
+<script>
+// 送出留言
+function sendComment() {
+    const name = document.getElementById("name").value;
+    const message = document.getElementById("message").value;
+
+    fetch("/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, message, time: new Date().toISOString() })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if(data.status === "ok") {
+            document.getElementById("name").value = "";
+            document.getElementById("message").value = "";
+            loadComments();
+        } else {
+            alert(data.message);
+        }
+    });
+}
+
+// 取得留言
+function loadComments() {
+    fetch("/list")
+    .then(res => res.json())
+    .then(data => {
+        const container = document.getElementById("comments");
+        container.innerHTML = "";
+        data.forEach(c => {
+            const div = document.createElement("div");
+            div.className = "comment";
+            div.innerHTML = `<strong>${c[1]}</strong> <small>${new Date(c[3]).toLocaleString()}</small><p>${c[2]}</p>`;
+            container.appendChild(div);
+        });
+    });
+}
+
+// 初始載入
+loadComments();
+</script>
+
+</body>
+</html>
