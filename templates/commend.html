@@ -5,79 +5,79 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>🌸留言板🌸</title>
 <style>
-  body {
-    font-family: "微軟正黑體";
-    background: linear-gradient(135deg, #fef6f9, #fcefe3);
-    padding: 40px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
+  body {
+    font-family: "微軟正黑體";
+    background: linear-gradient(135deg, #fef6f9, #fcefe3);
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
 
-  h1 {
-    color: #ff8da1;
-    margin-bottom: 20px;
-    text-shadow: 1px 1px 2px #ffd4d9;
-  }
+  h1 {
+    color: #ff8da1;
+    margin-bottom: 20px;
+    text-shadow: 1px 1px 2px #ffd4d9;
+  }
 
-  .board {
-    background: #fff;
-    border-radius: 20px;
-    box-shadow: 0 6px 20px rgba(255, 143, 160, 0.2);
-    width: 90%;
-    max-width: 600px;
-    padding: 25px;
-  }
+  .board {
+    background: #fff;
+    border-radius: 20px;
+    box-shadow: 0 6px 20px rgba(255, 143, 160, 0.2);
+    width: 90%;
+    max-width: 600px;
+    padding: 25px;
+  }
 
-  input, textarea {
-    width: 100%;
-    padding: 10px;
-    border-radius: 10px;
-    border: 1px solid #ffd1dc;
-    margin-bottom: 10px;
-    font-size: 1em;
-    outline: none;
-  }
+  input, textarea {
+    width: 100%;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid #ffd1dc;
+    margin-bottom: 10px;
+    font-size: 1em;
+    outline: none;
+  }
 
-  button {
-    background-color: #ffb6c1;
-    color: white;
-    padding: 10px 20px;
-    border: none;
-    border-radius: 10px;
-    cursor: pointer;
-    font-weight: bold;
-    transition: 0.2s;
-  }
+  button {
+    background-color: #ffb6c1;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: 0.2s;
+  }
 
-  button:hover {
-    background-color: #ff8da1;
-  }
+  button:hover {
+    background-color: #ff8da1;
+  }
 
-  .message {
-    background: #fff9fb;
-    border: 1px solid #ffe2eb;
-    padding: 15px;
-    border-radius: 15px;
-    margin-top: 15px;
-    box-shadow: 0 3px 8px rgba(255, 182, 193, 0.1);
-  }
+  .message {
+    background: #fff9fb;
+    border: 1px solid #ffe2eb;
+    padding: 15px;
+    border-radius: 15px;
+    margin-top: 15px;
+    box-shadow: 0 3px 8px rgba(255, 182, 193, 0.1);
+  }
 
-  .name {
-    font-weight: bold;
-    color: #ff69b4;
-  }
+  .name {
+    font-weight: bold;
+    color: #ff69b4;
+  }
 
-  .content {
-    margin-top: 5px;
-    color: #555;
-  }
+  .content {
+    margin-top: 5px;
+    color: #555;
+  }
 
-  .time {
-    font-size: 0.8em;
-    color: #aaa;
-    margin-top: 3px;
-  }
+  .time {
+    font-size: 0.8em;
+    color: #aaa;
+    margin-top: 3px;
+  }
 </style>
 <link rel="stylesheet" type="text/css" href="css/comments.css">
 </head>
@@ -86,11 +86,11 @@
 <h1>🌷 留言板 🌷</h1>
 
 <div class="board">
-  <input type="text" id="name" placeholder="你的名字">
-  <textarea id="message" rows="4" placeholder="想說什麼都可以呦～(๑>◡<๑)♡"></textarea>
-    <button type="button" onclick="addMessage()">送出留言</button> 
+  <input type="text" id="name" placeholder="你的名字">
+  <textarea id="message" rows="4" placeholder="想說什麼都可以呦～(๑>◡<๑)♡"></textarea>
+  <button onclick="addMessage()">送出留言</button>
 
-  <div id="messages"></div>
+  <div id="messages"></div>
 </div>
 
 <script>
