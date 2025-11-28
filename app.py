@@ -16,7 +16,7 @@ USE_POSTGRESQL = bool(DATABASE_URL)
 
 if USE_POSTGRESQL:
     # Render 有時使用 postgres:// 格式，但 psycopg2 需要 postgresql://
-    if DATABASE_URL.startswith("postgres://"):
+    if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
     
     # 打印資訊，確認使用 PostgreSQL
@@ -30,6 +30,7 @@ else:
 # 資料庫連線函式
 def get_db_connection():
     if USE_POSTGRESQL:
+        # 確保連線參數只在有 URL 時使用
         return psycopg2.connect(DATABASE_URL)
     else:
         return sqlite3.connect(DB_PATH)
@@ -80,7 +81,6 @@ def add():
     print("收到留言:", data)
     name = data.get("name", "").strip()
     message = data.get("message", "").strip()
-    # PostgreSQL 中，time 欄位現在是 TIMESTAMP 類型，可以傳入 Python 的 datetime 物件
     time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     if not name or not message:
@@ -90,11 +90,19 @@ def add():
         conn = get_db_connection()
         c = conn.cursor()
         
-        # PostgreSQL 表格名稱需要明確指定
         table_name = "public.comments" if USE_POSTGRESQL else "comments"
         
-        c.execute(f"INSERT INTO {table_name} (name, message, time, visible) VALUES (%s, %s, %s, 1)",
-                  (name, message, time))
+        # --- 【修正點 1: PostgreSQL 佔位符的正確寫法】 ---
+        # PostgreSQL/psycopg2 使用 %s 作為佔位符，並在 execute 中傳入 tuple。
+        # 原始碼: c.execute(f"INSERT INTO {table_name} (name, message, time, visible) VALUES (%s, %s, %s, 1)", (name, message, time))
+        # 修正: 必須在 SQL 語句中為所有值都設定佔位符 %s
+        
+        sql_query = f"INSERT INTO {table_name} (name, message, time, visible) VALUES (%s, %s, %s, %s)"
+        
+        # 參數 tuple 必須包含所有要傳遞的值 (name, message, time, 1)
+        params = (name, message, time, 1)
+        
+        c.execute(sql_query, params)
         conn.commit()
         conn.close()
         return jsonify({"status": "ok"})
@@ -140,6 +148,11 @@ def delete_comment(id):
         
         table_name = "public.comments" if USE_POSTGRESQL else "comments"
         
+        # --- 【修正點 2: UPDATE 語句的參數傳遞】 ---
+        # PostgreSQL/psycopg2 使用 %s，且參數必須作為 tuple 傳遞。
+        # 原始碼: c.execute(f"UPDATE {table_name} SET visible=0 WHERE id=%s", (id,))
+        # 修正: 語句已經正確，但確保參數 (id,) 傳遞是正確的 tuple 格式。
+        
         c.execute(f"UPDATE {table_name} SET visible=0 WHERE id=%s", (id,))
         conn.commit()
         conn.close()
@@ -152,3 +165,4 @@ def delete_comment(id):
 if __name__ == "__main__":
     print(f"使用資料庫：{'PostgreSQL' if USE_POSTGRESQL else 'SQLite'}")
     app.run(host="0.0.0.0", port=5000, debug=True)
+
