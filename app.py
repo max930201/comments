@@ -30,7 +30,6 @@ else:
 # 資料庫連線函式
 def get_db_connection():
     if USE_POSTGRESQL:
-        # 確保連線參數只在有 URL 時使用
         return psycopg2.connect(DATABASE_URL)
     else:
         return sqlite3.connect(DB_PATH)
@@ -75,6 +74,7 @@ init_db()
 def home():
     return render_template("commend.html")
 
+# --- 【 修正點 1：/add 函式確保同時兼容 PostgreSQL (%s) 和 SQLite (?) 】 ---
 @app.route("/add", methods=["POST"])
 def add():
     data = request.json
@@ -92,14 +92,14 @@ def add():
         
         table_name = "public.comments" if USE_POSTGRESQL else "comments"
         
-        # --- 【修正點 1: PostgreSQL 佔位符的正確寫法】 ---
-        # PostgreSQL/psycopg2 使用 %s 作為佔位符，並在 execute 中傳入 tuple。
-        # 原始碼: c.execute(f"INSERT INTO {table_name} (name, message, time, visible) VALUES (%s, %s, %s, 1)", (name, message, time))
-        # 修正: 必須在 SQL 語句中為所有值都設定佔位符 %s
-        
-        sql_query = f"INSERT INTO {table_name} (name, message, time, visible) VALUES (%s, %s, %s, %s)"
-        
-        # 參數 tuple 必須包含所有要傳遞的值 (name, message, time, 1)
+        # 根據資料庫類型使用正確的佔位符
+        if USE_POSTGRESQL:
+            # PostgreSQL/psycopg2 使用 %s 佔位符
+            sql_query = f"INSERT INTO {table_name} (name, message, time, visible) VALUES (%s, %s, %s, %s)"
+        else:
+            # SQLite (sqlite3) 使用 ? 佔位符
+            sql_query = f"INSERT INTO {table_name} (name, message, time, visible) VALUES (?, ?, ?, ?)"
+            
         params = (name, message, time, 1)
         
         c.execute(sql_query, params)
@@ -109,6 +109,7 @@ def add():
     except Exception as e:
         print("新增留言錯誤:", e)
         return jsonify({"status": "error", "message": str(e)}), 500
+# ----------------------------------------------------------------------
 
 @app.route("/list", methods=["GET"])
 def list_comments():
@@ -139,7 +140,7 @@ def list_comments():
         # 如果是找不到表格，可能是表格還沒創建，回傳空列表
         return jsonify([])
 
-
+# --- 【 修正點 2：/delete 函式確保同時兼容 PostgreSQL (%s) 和 SQLite (?) 】 ---
 @app.route("/delete/<int:id>", methods=["DELETE"])
 def delete_comment(id):
     try:
@@ -148,21 +149,26 @@ def delete_comment(id):
         
         table_name = "public.comments" if USE_POSTGRESQL else "comments"
         
-        # --- 【修正點 2: UPDATE 語句的參數傳遞】 ---
-        # PostgreSQL/psycopg2 使用 %s，且參數必須作為 tuple 傳遞。
-        # 原始碼: c.execute(f"UPDATE {table_name} SET visible=0 WHERE id=%s", (id,))
-        # 修正: 語句已經正確，但確保參數 (id,) 傳遞是正確的 tuple 格式。
+        # 根據資料庫類型使用正確的佔位符
+        if USE_POSTGRESQL:
+            # PostgreSQL/psycopg2 使用 %s 佔位符
+            sql_query = f"UPDATE {table_name} SET visible=0 WHERE id=%s"
+        else:
+            # SQLite (sqlite3) 使用 ? 佔位符
+            sql_query = f"UPDATE {table_name} SET visible=0 WHERE id=?"
         
-        c.execute(f"UPDATE {table_name} SET visible=0 WHERE id=%s", (id,))
+        # 參數 tuple
+        c.execute(sql_query, (id,))
+        
         conn.commit()
         conn.close()
         return jsonify({"status": "ok"})
     except Exception as e:
         print("刪除留言錯誤:", e)
         return jsonify({"status": "error", "message": str(e)}), 500
+# ----------------------------------------------------------------------
 
 
 if __name__ == "__main__":
     print(f"使用資料庫：{'PostgreSQL' if USE_POSTGRESQL else 'SQLite'}")
     app.run(host="0.0.0.0", port=5000, debug=True)
-
