@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
-import os
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///comments.db'
@@ -13,10 +12,10 @@ class Comment(db.Model):
     name = db.Column(db.String(50))
     message = db.Column(db.Text)
 
-# 初始化資料庫（第一次跑才要）
-@app.before_first_request
-def create_tables():
-    db.create_all()
+# 初始化資料庫（直接在程式啟動時呼叫）
+def init_db():
+    with app.app_context():
+        db.create_all()
 
 # 主頁
 @app.route("/")
@@ -46,5 +45,7 @@ def delete_comment(id):
         return jsonify({"status": "deleted"})
     return jsonify({"status": "error"})
 
+# 啟動 Flask 時初始化資料庫
 if __name__ == "__main__":
-    app.run(debug=True)
+    init_db()  # 這裡取代 before_first_request
+    app.run(host="0.0.0.0", port=5000)
