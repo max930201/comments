@@ -1,8 +1,9 @@
 from flask import Flask, request, jsonify, render_template
 import os
-import psycopg2  # 用於 PostgreSQL
-import sqlite3   # 用於本地 SQLite
+import psycopg2  # PostgreSQL
+import sqlite3   # SQLite
 from datetime import datetime
+import pytz      # 處理時區
 
 app = Flask(__name__)
 
@@ -11,12 +12,11 @@ DATABASE_URL = os.environ.get('ASE_URL')  # Render 環境變數
 USE_POSTGRESQL = bool(DATABASE_URL)
 
 if USE_POSTGRESQL:
-    # PostgreSQL URL 可能是 postgres:// 需要改成 postgresql://
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
     print("使用 PostgreSQL 資料庫 (從 ASE_URL 讀取)")
 else:
-    DB_PATH = "comments.db"  # 本地 SQLite
+    DB_PATH = "comments.db"
     print(f"使用本地 SQLite 資料庫檔案: {DB_PATH}")
 
 # --- 【資料庫連線函式】 ---
@@ -53,10 +53,12 @@ def init_db():
     conn.commit()
     conn.close()
 
-init_db()  # 首次運行初始化
+init_db()
+
+# --- 【時區設定】 ---
+taiwan_tz = pytz.timezone('Asia/Taipei')
 
 # --- 【Flask 路由】 ---
-
 @app.route("/")
 def home():
     return render_template("commend.html")
@@ -67,7 +69,6 @@ def add():
     print("收到留言:", data)
     name = data.get("name", "").strip()
     message = data.get("message", "").strip()
-    time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     if not name or not message:
         return jsonify({"status": "error", "message": "請輸入名字和留言內容"}), 400
@@ -77,16 +78,17 @@ def add():
         c = conn.cursor()
         table_name = "public.comments" if USE_POSTGRESQL else "comments"
 
-        # 根據資料庫選擇佔位符
+        # --- 新增留言時使用正確時間 ---
+        now = datetime.now(taiwan_tz)  # 取得台灣時間
         if USE_POSTGRESQL:
             c.execute(
                 f"INSERT INTO {table_name} (name, message, time, visible) VALUES (%s, %s, %s, 1)",
-                (name, message, time)
+                (name, message, now)
             )
         else:
             c.execute(
                 f"INSERT INTO {table_name} (name, message, time, visible) VALUES (?, ?, ?, 1)",
-                (name, message, time)
+                (name, message, now.strftime("%Y-%m-%d %H:%M:%S"))
             )
 
         conn.commit()
@@ -107,15 +109,15 @@ def list_comments():
         rows = c.fetchall()
         conn.close()
 
-        # PostgreSQL time 需要轉字串
-        if USE_POSTGRESQL:
-            processed_rows = []
-            for row in rows:
-                time_str = row[3].strftime("%Y/%m/%d %H:%M:%S") if isinstance(row[3], datetime) else str(row[3])
-                processed_rows.append((row[0], row[1], row[2], time_str))
-            rows = processed_rows
+        processed_rows = []
+        for row in rows:
+            if USE_POSTGRESQL and isinstance(row[3], datetime):
+                time_str = row[3].astimezone(taiwan_tz).strftime("%Y/%m/%d %H:%M:%S")
+            else:
+                time_str = str(row[3])
+            processed_rows.append((row[0], row[1], row[2], time_str))
 
-        return jsonify(rows)
+        return jsonify(processed_rows)
     except Exception as e:
         print("查詢留言錯誤:", e)
         return jsonify([])
@@ -139,7 +141,7 @@ def delete_comment(id):
         print("刪除留言錯誤:", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# --- 【新增管理頁面：查看資料庫內容】 ---
+# --- 【管理頁面 /admin】 ---
 @app.route("/admin")
 def admin():
     try:
@@ -151,22 +153,24 @@ def admin():
         rows = c.fetchall()
         conn.close()
 
-        # PostgreSQL time 需要轉字串
         processed_rows = []
         for row in rows:
-            if USE_POSTGRESQL:
-                time_str = row[3].strftime("%Y/%m/%d %H:%M:%S") if isinstance(row[3], datetime) else str(row[3])
+            if USE_POSTGRESQL and isinstance(row[3], datetime):
+                time_str = row[3].astimezone(taiwan_tz).strftime("%Y/%m/%d %H:%M:%S")
             else:
                 time_str = str(row[3])
             processed_rows.append((row[0], row[1], row[2], time_str, row[4]))
 
-        # 生成簡單 HTML 表格
-        html = "<h2>留言資料庫內容</h2>"
-        html += "<table border='1' cellspacing='0' cellpadding='5'>"
-        html += "<tr><th>ID</th><th>名字</th><th>留言</th><th>時間</th><th>Visible</th></tr>"
+        # 生成手機友善 HTML 表格
+        html = """
+        <h2>留言資料庫內容</h2>
+        <div style="overflow-x:auto;">
+        <table border='1' cellspacing='0' cellpadding='5'>
+        <tr><th>ID</th><th>名字</th><th>留言</th><th>時間</th><th>Visible</th></tr>
+        """
         for r in processed_rows:
             html += f"<tr><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td>{r[3]}</td><td>{r[4]}</td></tr>"
-        html += "</table>"
+        html += "</table></div>"
         return html
     except Exception as e:
         print("查看資料庫錯誤:", e)
