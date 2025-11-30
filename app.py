@@ -9,10 +9,10 @@ app = Flask(__name__)
 # ------------------------------
 # 讀取 Render 的資料庫環境變數
 # ------------------------------
-DATABASE_URL = os.environ.get("DATABASE_URL")  # 一定要叫 DATABASE_URL！
+DATABASE_URL = os.environ.get("DATABASE_URL")
 use_postgresql = bool(DATABASE_URL)
 
-# 若是舊格式 postgres:// → postgresql://
+# 修正舊格式 postgres://
 if use_postgresql and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
@@ -28,7 +28,7 @@ def get_db_connection():
 
 
 # ------------------------------
-# 初始化資料表（含 is_deleted）
+# 初始化資料表
 # ------------------------------
 def init_db():
     if use_postgresql:
@@ -57,12 +57,11 @@ def init_db():
             """)
             conn.commit()
 
-# 初始化
 init_db()
 
 
 # ------------------------------
-# 首頁頁面
+# 首頁
 # ------------------------------
 @app.route("/")
 def home():
@@ -70,7 +69,7 @@ def home():
 
 
 # ------------------------------
-# 新增留言（儲存 UTC）
+# 新增留言
 # ------------------------------
 @app.route("/add", methods=["POST"])
 def add_comment():
@@ -99,7 +98,7 @@ def add_comment():
 
 
 # ------------------------------
-# 列出留言（排除 is_deleted = TRUE）
+# 前端：列出未刪除留言
 # ------------------------------
 @app.route("/list")
 def list_comments():
@@ -135,7 +134,42 @@ def list_comments():
 
 
 # ------------------------------
-# 軟刪除（只把 is_deleted 設為 TRUE）
+# 後台：列出所有留言（含刪除）
+# ------------------------------
+@app.route("/admin/list")
+def admin_list():
+    if use_postgresql:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, name, message, created_at, is_deleted
+                    FROM comments
+                    ORDER BY created_at DESC
+                """)
+                rows = cur.fetchall()
+    else:
+        with get_db_connection() as conn:
+            rows = conn.execute("""
+                SELECT id, name, message, created_at, is_deleted
+                FROM comments
+                ORDER BY created_at DESC
+            """).fetchall()
+
+    comments = []
+    for r in rows:
+        comments.append({
+            "id": r[0],
+            "name": r[1],
+            "message": r[2],
+            "created_at": r[3].isoformat() if hasattr(r[3], "isoformat") else r[3],
+            "is_deleted": bool(r[4])
+        })
+
+    return jsonify(comments)
+
+
+# ------------------------------
+# 軟刪除
 # ------------------------------
 @app.route("/delete/<int:cid>", methods=["POST"])
 def delete_comment(cid):
