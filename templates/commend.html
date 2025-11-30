@@ -1,172 +1,69 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌸留言板🌸</title>
-<style>
-  body {
-    font-family: "微軟正黑體";
-    background: linear-gradient(135deg, #fef6f9, #fcefe3);
-    padding: 40px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
-  h1 {
-    color: #ff8da1;
-    margin-bottom: 20px;
-    text-shadow: 1px 1px 2px #ffd4d9;
-  }
-
-  .board {
-    background: #fff;
-    border-radius: 20px;
-    box-shadow: 0 6px 20px rgba(255, 143, 160, 0.2);
-    width: 90%;
-    max-width: 600px;
-    padding: 25px;
-  }
-
-  input, textarea {
-    width: 100%;
-    padding: 10px;
-    border-radius: 10px;
-    border: 1px solid #ffd1dc;
-    margin-bottom: 10px;
-    font-size: 1em;
-    outline: none;
-  }
-
-  button {
-    background-color: #ffb6c1;
-    color: white;
-    padding: 10px 20px;
-    border: none;
-    border-radius: 10px;
-    cursor: pointer;
-    font-weight: bold;
-    transition: 0.2s;
-  }
-
-  button:hover {
-    background-color: #ff8da1;
-  }
-
-  .message {
-    background: #fff9fb;
-    border: 1px solid #ffe2eb;
-    padding: 15px;
-    border-radius: 15px;
-    margin-top: 15px;
-    box-shadow: 0 3px 8px rgba(255, 182, 193, 0.1);
-  }
-
-  .name {
-    font-weight: bold;
-    color: #ff69b4;
-  }
-
-  .content {
-    margin-top: 5px;
-    color: #555;
-  }
-
-  .time {
-    font-size: 0.8em;
-    color: #aaa;
-    margin-top: 3px;
-  }
-</style>
-<link rel="stylesheet" type="text/css" href="css/comments.css">
+    <meta charset="UTF-8">
+    <title>留言板</title>
 </head>
 <body>
 
-<h1>🌷 留言板 🌷</h1>
+<h2>🌸 留言板 🌸</h2>
 
-<div class="board">
-  <input type="text" id="name" placeholder="你的名字">
-  <textarea id="message" rows="4" placeholder="想說什麼都可以呦～(๑>◡<๑)♡"></textarea>
-  <button onclick="addMessage()">送出留言</button>
+<input id="name" placeholder="你的名字">
+<br><br>
+<textarea id="message" placeholder="留言內容"></textarea>
+<br>
+<button onclick="send()">送出留言</button>
 
-  <div id="messages"></div>
-</div>
+<hr>
+
+<div id="list"></div>
 
 <script>
-  const messagesDiv = document.getElementById("messages");
+// 轉台灣時間
+function toTaiwanTime(utcString) {
+    return new Date(utcString).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
+}
 
-  function addMessage() {
-    const name = document.getElementById("name").value.trim();
-    const message = document.getElementById("message").value.trim();
-    if(!name || !message) {
-      alert("請輸入名字和留言內容喔～♡");
-      return;
-    }
-    const time = new Date().toLocaleString();
-    // 修正點 2: 移除 http://127.0.0.1:5000
-    fetch("/add", { 
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, message, time })
-    })
-    .then(res => {
-        // 檢查 HTTP 狀態碼是否成功
-        if (!res.ok) {
-            return res.json().then(error => {
-                throw new Error(error.message || '伺服器錯誤');
+// 載入留言
+function loadMessages() {
+    fetch("/list")
+        .then(r => r.json())
+        .then(list => {
+            let html = "";
+            list.forEach(item => {
+                html += `
+                <div style="border:1px solid #ccc; padding:10px; margin:10px;">
+                    <b>${item.name}</b><br>
+                    ${item.message}<br>
+                    <small>${toTaiwanTime(item.created_at)}</small><br>
+                    <button onclick="deleteMsg(${item.id})">刪除</button>
+                </div>`;
             });
-        }
-        return res.json();
-    })
-    .then(data => {
-      if(data.status === "ok") {
-        document.getElementById("name").value = "";
-        document.getElementById("message").value = "";
-        loadMessages();
-      } else {
-        alert(data.message);
-      }
-    })
-    .catch(error => {
-        alert("新增留言失敗：" + error.message);
-    });
-  }
-
-  function loadMessages() {
-    // 修正點 3: 移除 http://127.0.0.1:5000
-    fetch("/list") 
-      .then(res => res.json())
-      .then(data => {
-        messagesDiv.innerHTML = "";
-        data.forEach(msg => {
-          const div = document.createElement("div");
-          div.className = "message";
-          div.innerHTML = `
-            <button class="delete-btn" onclick="deleteMessage(${msg[0]})">✖</button>
-            <div class="name">${msg[1]}</div>
-            <div class="content">${msg[2]}</div>
-            <div class="time">${msg[3]}</div>
-          `;
-          messagesDiv.appendChild(div);
+            document.getElementById("list").innerHTML = html;
         });
-      });
-  }
+}
 
-  function deleteMessage(id) {
-    if(confirm("確定要刪除這則留言嗎？(´・ω・`)")) {
-        // 修正點 4: 移除 http://127.0.0.1:5000
-      fetch(`/delete/${id}`, { 
-        method: "DELETE"
-      })
-      .then(res => res.json())
-      .then(data => {
-        if(data.status === "ok") loadMessages();
-      });
-    }
-  }
+// 新增留言
+function send() {
+    fetch("/add", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            name: document.getElementById("name").value,
+            message: document.getElementById("message").value
+        })
+    }).then(() => loadMessages());
+}
 
-  loadMessages();
+// 假刪除
+function deleteMsg(id) {
+    fetch(`/delete/${id}`, { method: "POST" })
+        .then(() => loadMessages());
+}
+
+loadMessages();
 </script>
+
 </body>
 </html>
+
