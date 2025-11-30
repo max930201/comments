@@ -1,181 +1,156 @@
 from flask import Flask, request, jsonify, render_template
-import os
-import psycopg2  # PostgreSQL
-import sqlite3   # SQLite
 from datetime import datetime
-import pytz      # 處理時區
+import os
+import psycopg2
+import sqlite3
 
 app = Flask(__name__)
 
-# --- 【資料庫設定】 ---
-DATABASE_URL = os.environ.get('ASE_URL')  # Render 環境變數
-USE_POSTGRESQL = bool(DATABASE_URL)
+# ------------------------------
+# 讀取 Render 的資料庫環境變數
+# ------------------------------
+DATABASE_URL = os.environ.get("DATABASE_URL")  # 一定要叫 DATABASE_URL！
+use_postgresql = bool(DATABASE_URL)
 
-if USE_POSTGRESQL:
-    if DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    print("使用 PostgreSQL 資料庫 (從 ASE_URL 讀取)")
-else:
-    DB_PATH = "comments.db"
-    print(f"使用本地 SQLite 資料庫檔案: {DB_PATH}")
+# 若是舊格式 postgres:// → postgresql://
+if use_postgresql and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# --- 【資料庫連線函式】 ---
+
+# ------------------------------
+# 建立 PostgreSQL / SQLite 連線
+# ------------------------------
 def get_db_connection():
-    if USE_POSTGRESQL:
+    if use_postgresql:
         return psycopg2.connect(DATABASE_URL)
     else:
-        return sqlite3.connect(DB_PATH)
+        return sqlite3.connect("comments.db")
 
-# --- 【初始化資料庫】 ---
+
+# ------------------------------
+# 初始化資料表（含 is_deleted）
+# ------------------------------
 def init_db():
-    conn = get_db_connection()
-    c = conn.cursor()
-    if USE_POSTGRESQL:
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS public.comments (
-                id SERIAL PRIMARY KEY,
-                name TEXT NOT NULL,
-                message TEXT NOT NULL,
-                time TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                visible INTEGER DEFAULT 1
-            )
-        """)
+    if use_postgresql:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS comments (
+                        id SERIAL PRIMARY KEY,
+                        name TEXT,
+                        message TEXT,
+                        created_at TIMESTAMP,
+                        is_deleted BOOLEAN DEFAULT FALSE
+                    );
+                """)
+            conn.commit()
     else:
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS comments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                message TEXT NOT NULL,
-                time TEXT NOT NULL,
-                visible INTEGER DEFAULT 1
-            )
-        """)
-    conn.commit()
-    conn.close()
+        with get_db_connection() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS comments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT,
+                    message TEXT,
+                    created_at TEXT,
+                    is_deleted INTEGER DEFAULT 0
+                );
+            """)
+            conn.commit()
 
+# 初始化
 init_db()
 
-# --- 【時區設定】 ---
-taiwan_tz = pytz.timezone('Asia/Taipei')
 
-# --- 【Flask 路由】 ---
+# ------------------------------
+# 首頁頁面
+# ------------------------------
 @app.route("/")
 def home():
     return render_template("commend.html")
 
+
+# ------------------------------
+# 新增留言（儲存 UTC）
+# ------------------------------
 @app.route("/add", methods=["POST"])
-def add():
+def add_comment():
     data = request.json
-    print("收到留言:", data)
-    name = data.get("name", "").strip()
-    message = data.get("message", "").strip()
+    name = data.get("name", "匿名")
+    message = data.get("message", "")
+    utc_time = datetime.utcnow()
 
-    if not name or not message:
-        return jsonify({"status": "error", "message": "請輸入名字和留言內容"}), 400
+    if use_postgresql:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO comments (name, message, created_at, is_deleted)
+                    VALUES (%s, %s, %s, FALSE)
+                """, (name, message, utc_time))
+            conn.commit()
+    else:
+        with get_db_connection() as conn:
+            conn.execute("""
+                INSERT INTO comments (name, message, created_at, is_deleted)
+                VALUES (?, ?, ?, 0)
+            """, (name, message, utc_time))
+            conn.commit()
 
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        table_name = "public.comments" if USE_POSTGRESQL else "comments"
+    return jsonify({"status": "success"})
 
-        # --- 新增留言時使用正確時間 ---
-        now = datetime.now(taiwan_tz)  # 取得台灣時間
-        if USE_POSTGRESQL:
-            c.execute(
-                f"INSERT INTO {table_name} (name, message, time, visible) VALUES (%s, %s, %s, 1)",
-                (name, message, now)
-            )
-        else:
-            c.execute(
-                f"INSERT INTO {table_name} (name, message, time, visible) VALUES (?, ?, ?, 1)",
-                (name, message, now.strftime("%Y-%m-%d %H:%M:%S"))
-            )
 
-        conn.commit()
-        conn.close()
-        return jsonify({"status": "ok"})
-    except Exception as e:
-        print("新增留言錯誤:", e)
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route("/list", methods=["GET"])
+# ------------------------------
+# 列出留言（排除 is_deleted = TRUE）
+# ------------------------------
+@app.route("/list")
 def list_comments():
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        table_name = "public.comments" if USE_POSTGRESQL else "comments"
+    if use_postgresql:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, name, message, created_at
+                    FROM comments
+                    WHERE is_deleted = FALSE
+                    ORDER BY created_at DESC
+                """)
+                rows = cur.fetchall()
+    else:
+        with get_db_connection() as conn:
+            rows = conn.execute("""
+                SELECT id, name, message, created_at
+                FROM comments
+                WHERE is_deleted = 0
+                ORDER BY created_at DESC
+            """).fetchall()
 
-        c.execute(f"SELECT id, name, message, time FROM {table_name} WHERE visible=1 ORDER BY id DESC")
-        rows = c.fetchall()
-        conn.close()
+    comments = []
+    for r in rows:
+        comments.append({
+            "id": r[0],
+            "name": r[1],
+            "message": r[2],
+            "created_at": r[3].isoformat() if hasattr(r[3], "isoformat") else r[3]
+        })
 
-        processed_rows = []
-        for row in rows:
-            if USE_POSTGRESQL and isinstance(row[3], datetime):
-                time_str = row[3].astimezone(taiwan_tz).strftime("%Y/%m/%d %H:%M:%S")
-            else:
-                time_str = str(row[3])
-            processed_rows.append((row[0], row[1], row[2], time_str))
+    return jsonify(comments)
 
-        return jsonify(processed_rows)
-    except Exception as e:
-        print("查詢留言錯誤:", e)
-        return jsonify([])
 
-@app.route("/delete/<int:id>", methods=["DELETE"])
-def delete_comment(id):
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        table_name = "public.comments" if USE_POSTGRESQL else "comments"
+# ------------------------------
+# 軟刪除（只把 is_deleted 設為 TRUE）
+# ------------------------------
+@app.route("/delete/<int:cid>", methods=["POST"])
+def delete_comment(cid):
+    if use_postgresql:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE comments SET is_deleted = TRUE WHERE id = %s", (cid,))
+            conn.commit()
+    else:
+        with get_db_connection() as conn:
+            conn.execute("UPDATE comments SET is_deleted = 1 WHERE id = ?", (cid,))
+            conn.commit()
 
-        if USE_POSTGRESQL:
-            c.execute(f"UPDATE {table_name} SET visible=0 WHERE id=%s", (id,))
-        else:
-            c.execute(f"UPDATE {table_name} SET visible=0 WHERE id=?", (id,))
+    return jsonify({"status": "deleted"})
 
-        conn.commit()
-        conn.close()
-        return jsonify({"status": "ok"})
-    except Exception as e:
-        print("刪除留言錯誤:", e)
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-# --- 【管理頁面 /admin】 ---
-@app.route("/admin")
-def admin():
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        table_name = "public.comments" if USE_POSTGRESQL else "comments"
-
-        c.execute(f"SELECT id, name, message, time, visible FROM {table_name} ORDER BY id DESC")
-        rows = c.fetchall()
-        conn.close()
-
-        processed_rows = []
-        for row in rows:
-            if USE_POSTGRESQL and isinstance(row[3], datetime):
-                time_str = row[3].astimezone(taiwan_tz).strftime("%Y/%m/%d %H:%M:%S")
-            else:
-                time_str = str(row[3])
-            processed_rows.append((row[0], row[1], row[2], time_str, row[4]))
-
-        # 生成手機友善 HTML 表格
-        html = """
-        <h2>留言資料庫內容</h2>
-        <div style="overflow-x:auto;">
-        <table border='1' cellspacing='0' cellpadding='5'>
-        <tr><th>ID</th><th>名字</th><th>留言</th><th>時間</th><th>Visible</th></tr>
-        """
-        for r in processed_rows:
-            html += f"<tr><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td>{r[3]}</td><td>{r[4]}</td></tr>"
-        html += "</table></div>"
-        return html
-    except Exception as e:
-        print("查看資料庫錯誤:", e)
-        return f"<p>發生錯誤: {str(e)}</p>"
 
 if __name__ == "__main__":
-    print(f"使用資料庫：{'PostgreSQL' if USE_POSTGRESQL else 'SQLite'}")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000)
