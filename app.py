@@ -22,10 +22,9 @@ if use_postgresql and DATABASE_URL.startswith("postgres://"):
 # ------------------------------
 def get_db_connection():
     if use_postgresql:
-        return psycopg2.connect(DATABASE_URL)
+        return psycopg2.connect(DATABASE_URL, sslmode="require")
     else:
         return sqlite3.connect("comments.db")
-
 
 # ------------------------------
 # 初始化資料表
