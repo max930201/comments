@@ -15,6 +15,3 @@ pytz==2024.2
 typing-extensions==4.15.0
 gunicorn==21.2.0
 
-
-
-
